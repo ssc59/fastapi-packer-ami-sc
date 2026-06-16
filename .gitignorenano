@@ -1,0 +1,11 @@
+*.pkrvars.hcl
+crash.log
+packer_cache/
+manifest.json
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+*.swp

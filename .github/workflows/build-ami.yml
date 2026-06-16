@@ -1,0 +1,84 @@
+name: Build AMI with Packer
+
+on:
+  workflow_dispatch:
+    inputs:
+      docker_image:
+        description: 'Docker image to bake into AMI'
+        required: true
+        default: 'srushtichavan/fastapi-cicd:latest'
+      environment:
+        description: 'Environment (dev, staging, prod)'
+        required: false
+        default: 'dev'
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  PACKER_VERSION: "1.10.0"
+
+jobs:
+  build-ami:
+    name: Build Golden AMI
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: GitHubActions-Packer
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Verify AWS credentials
+        run: |
+          aws sts get-caller-identity
+          echo "✅ AWS credentials configured successfully"
+      
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: ${{ env.PACKER_VERSION }}
+      
+      - name: Initialize Packer
+        run: packer init packer.pkr.hcl
+      
+      - name: Validate Packer template
+        run: packer validate packer.pkr.hcl
+      
+      - name: Build AMI
+        run: |
+          packer build \
+            -var "aws_region=${{ env.AWS_REGION }}" \
+            -var "docker_image=${{ github.event.inputs.docker_image || 'httpd:latest' }}" \
+            -var "environment=${{ github.event.inputs.environment || 'dev' }}" \
+            packer.pkr.hcl
+      
+      - name: Extract AMI ID
+        id: ami
+        run: |
+          AMI_ID=$(jq -r '.builds[-1].artifact_id' manifest.json | cut -d':' -f2)
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+          echo "### AMI Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**AMI ID:** \`$AMI_ID\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Docker Image:** ${{ github.event.inputs.docker_image || 'httpd:latest' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Use this AMI ID in your Terraform configuration!" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-manifest
+          path: manifest.json
+          retention-days: 30
+    
+    outputs:
+      ami_id: ${{ steps.ami.outputs.ami_id }}
