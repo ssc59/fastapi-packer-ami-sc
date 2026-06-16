@@ -52,6 +52,9 @@ source "amazon-ebs" "fastapi" {
   source_ami    = data.amazon-ami.amazon_linux_2023.id
   instance_type = "t2.micro"
   ssh_username  = "ec2-user"
+
+  subnet_id                   = "subnet-0611479b1a05e9bc8"
+  associate_public_ip_address = true
   
   # AMI configuration
   ami_name        = local.ami_name
